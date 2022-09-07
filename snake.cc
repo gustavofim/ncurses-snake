@@ -1,11 +1,12 @@
-#include <iostream>
 #include <ncurses.h>
+#include <iostream>
+#include <random>
 #include <list>
 
 using namespace std;
 
 // getch timeout | "framerate" | difficulty
-const int TIMEOUT = 50;
+const int TIMEOUT = 100;
 // Board size
 int const BOARD_LIN = 32;
 int const BOARD_COL = 62;
@@ -13,6 +14,12 @@ int const BOARD_COL = 62;
 char const GROUND_CH = '.';
 char const SNAKE_CH = 'O';
 char const FOOD_CH = '@';
+
+random_device dev;
+mt19937 rng(dev());
+uniform_int_distribution<std::mt19937::result_type> rand_col(1, BOARD_COL - 2);
+uniform_int_distribution<std::mt19937::result_type> rand_lin(1, BOARD_LIN - 2);
+uniform_int_distribution<std::mt19937::result_type> dice(1, 100);
 
 struct Point {
 	int x;
@@ -51,6 +58,12 @@ Point dirvec[4] {
 
 WINDOW *board;
 Dir dir = RIGHT;
+
+void
+gen_food()
+{
+	mvwaddch(board, rand_lin(rng), rand_col(rng), FOOD_CH | COLOR_PAIR(2) | A_BLINK);
+}
 
 void
 update_dir()
@@ -98,14 +111,15 @@ update_snake()
 	if (1 > new_head.x || BOARD_COL - 2 < new_head.x || 1 > new_head.y || BOARD_LIN - 2 < new_head.y)
 		return true;
 	snake.push_back(new_head);		
-	if (mvwinch(board, new_head.y, new_head.x) != FOOD_CH) {
+	if (char(mvwinch(board, new_head.y, new_head.x)) != FOOD_CH) {
 		Point p = snake.front();
-		mvwaddch(board, p.y, p.x, GROUND_CH);
+		mvwaddch(board, p.y, p.x, GROUND_CH | COLOR_PAIR(1));
 		snake.pop_front();
 		p = snake.back();
-		mvwaddch(board, p.y, p.x, SNAKE_CH);
+		mvwaddch(board, p.y, p.x, SNAKE_CH | COLOR_PAIR(3));
 	} else {
-		mvwaddch(board, new_head.y, new_head.x, SNAKE_CH);
+		mvwaddch(board, new_head.y, new_head.x, SNAKE_CH | COLOR_PAIR(1));
+		gen_food();
 	}
 	return false;
 }
@@ -113,37 +127,38 @@ update_snake()
 int
 main()
 {
-	bool over = false;
 	initscr();
 	noecho();
 	curs_set(0);
+	start_color();
+	init_pair(1, COLOR_GREEN, COLOR_BLACK);
+	init_pair(2, COLOR_RED, COLOR_BLACK);
+	init_pair(3, COLOR_YELLOW, COLOR_BLACK);
 	timeout(TIMEOUT);
 	keypad(stdscr, true);
 	// Draws title, board and snake
 	printw("SNAKE");
 	mvchgat(0, 0, BOARD_COL, A_REVERSE, 0, 0);
 	board = newwin(BOARD_LIN, BOARD_COL, 1, 0);
-	//nodelay(board, true);
-	//keypad(board, true);
 	box(board, 0, 0);
 	for (int i = 1; i < BOARD_LIN - 1; ++i) {
 		for (int j = 1; j < BOARD_COL - 1; ++j) {
-			mvwaddch(board, i, j, GROUND_CH);
+			mvwaddch(board, i, j, GROUND_CH | COLOR_PAIR(1));
 		}
 	}
 	for (auto i : snake) {
-		mvwaddch(board, i.y, i.x, SNAKE_CH);
+		mvwaddch(board, i.y, i.x, SNAKE_CH | COLOR_PAIR(3));
 	}
-	mvwaddch(board, 10, 20, FOOD_CH);
-	mvwaddch(board, 10, 25, FOOD_CH);
-	mvwaddch(board, 10, 30, FOOD_CH);
+	gen_food();
 	refresh();
 	wrefresh(board);
+	// Game loop
+	bool over = false;
 	while(!over) {
 		update_dir();
 		over = update_snake();
 		Point h = snake.back();
-		mvprintw(BOARD_LIN+1, 0, "%d, %d", h.x, h.y);
+		mvprintw(BOARD_LIN+1, 0, "%d", snake.size());
 		wrefresh(board);
 	}
 	endwin();
