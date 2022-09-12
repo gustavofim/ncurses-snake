@@ -5,33 +5,35 @@
 
 using namespace std;
 
-// getch timeout | "framerate" | difficulty
-const int TIMEOUT = 100;
-// Board size
-int const BOARD_LIN = 32;
-int const BOARD_COL = 62;
+
+// Initial timeout
+// timeout = DELAY - DECR * SPD
+int const DELAY = 200;
+int const MAX_SPD = 15;
+int const DECR = 10;
 // Appearance
-char const GROUND_CH = '.';
-char const SNAKE_CH = 'O';
-char const FOOD_CH = '@';
+wchar_t const SNAKE_BD = 'O';
+char const SNAKE_HD = '@';
+char const FOOD_CH = 'f';
+char const HALVER_CH = '/';
+char const DIET_CH = '0';
+char const COKE_CH = '+';
+// Map size, including walls
+int const MAP_LIN = 32;
+int const MAP_COL = 62;
+char map[MAP_COL][MAP_LIN];
+// Windows
+WINDOW * map_win;
+WINDOW * main_win;
 
 random_device dev;
 mt19937 rng(dev());
-uniform_int_distribution<std::mt19937::result_type> rand_col(1, BOARD_COL - 2);
-uniform_int_distribution<std::mt19937::result_type> rand_lin(1, BOARD_LIN - 2);
-uniform_int_distribution<std::mt19937::result_type> dice(1, 100);
+uniform_int_distribution<std::mt19937::result_type> rand_col(1, MAP_COL - 2);
+uniform_int_distribution<std::mt19937::result_type> rand_lin(1, MAP_LIN - 2);
+uniform_int_distribution<std::mt19937::result_type> d100(1, 100);
+uniform_int_distribution<std::mt19937::result_type> d10(1, 10);
 
-struct Point {
-	int x;
-	int y;
-	Point(int x, int y) : x(x), y(y) {}
-	Point operator+(Point p) {
-		return Point(p.x + x, p.y + y);
-	}
-	bool operator==(Point p) {
-		return p.x == x && p.y == y;
-	}
-};
+void gen_food();
 
 enum Dir {
 	UP,
@@ -40,127 +42,231 @@ enum Dir {
 	LEFT,
 };
 
-list<Point> snake = {
-	Point(10, 10),
-	Point(11, 10),
-	Point(12, 10),
-	Point(13, 10),
-	Point(14, 10),
-	Point(15, 10),
+class Point {
+public:
+	int x;
+	int y;
+
+	Point(int x=0, int y=0) : x(x), y(y) {}
+
+	Point operator+(Point p) {
+		return Point(p.x + x, p.y + y);
+	}
+
+	bool operator==(Point p) {
+		return p.x == x && p.y == y;
+	}
 };
 
-Point dirvec[4] {
+Point const dirvec[4] {
 	Point(0, -1),
 	Point(0, 1),
 	Point(1, 0),
 	Point(-1, 0),
 };
 
-WINDOW *board;
-Dir dir = RIGHT;
+class Snake {
+public:
+	int speed;
+	int food_n;
+	int halver_n;
+	int diet_n;
+	int coke_n;
+	int pts;
+	bool dead;
+	Dir dir;
+	list<Point> seg;
 
-void
-gen_food()
+	Snake() {
+		speed = food_n = halver_n = diet_n = coke_n = pts = 0;
+		dead = false;
+		dir = RIGHT;
+		seg = {
+			Point(10, 10),
+			Point(11, 10),
+			Point(12, 10),
+			Point(13, 10),
+			Point(14, 10),
+			Point(15, 10),
+		};
+		timeout(DELAY);
+	}
+
+	void print() {
+		for (auto i : seg) {
+			mvwaddch(map_win, i.y, i.x, SNAKE_BD | COLOR_PAIR(3));
+		}
+		Point head = seg.back();
+		mvwaddch(map_win, head.y, head.x, SNAKE_HD | COLOR_PAIR(3));
+	}
+
+	bool contains(Point p) {
+		for (auto i : seg) {
+			if (p == i)
+				return true;
+		}
+		return false;
+	}
+
+	void add_speed(int n) {
+		speed += n;
+		if (speed > MAX_SPD) speed = MAX_SPD;
+		if (speed < 0) speed = 0;
+		timeout(DELAY - DECR * speed);
+	}
+
+	void update() {
+		Point old_head = seg.back();
+		Point new_head = seg.back() + dirvec[dir];
+
+		// Check collision with itself
+		if (contains(new_head)) {
+			dead = true;
+			return;
+		}
+
+		char c = mvwinch(map_win, new_head.y, new_head.x);
+
+		// Check collision with walls
+		if (c == '#') {
+			dead = true;
+			return;
+		}
+
+		seg.push_back(new_head);		
+
+		if (c == FOOD_CH) {
+			gen_food();
+			add_speed(1);
+		} else {
+			Point p = seg.front();
+			mvwaddch(map_win, p.y, p.x, map[p.x][p.y] | COLOR_PAIR(1));
+			seg.pop_front();
+		}
+		mvwaddch(map_win, new_head.y, new_head.x, SNAKE_HD | COLOR_PAIR(3));
+		mvwaddch(map_win, old_head.y, old_head.x, SNAKE_BD | COLOR_PAIR(3));
+	}
+};
+
+Snake snake;
+
+void gen_food()
 {
-	mvwaddch(board, rand_lin(rng), rand_col(rng), FOOD_CH | COLOR_PAIR(2) | A_BLINK);
+	Point new_food;
+
+	do {
+		new_food = Point(rand_col(rng), rand_lin(rng));
+	} while (snake.contains(new_food));
+
+	mvwaddch(map_win, new_food.y, new_food.x, FOOD_CH | COLOR_PAIR(2));
 }
 
-void
-update_dir()
-{
-	switch (getch()) {
-		case KEY_UP:
-		case 'w':
-		case 'k':
-			if (dir != DOWN)
-				dir = UP;
-			break;
-		case KEY_DOWN:
-		case 's':
-		case 'j':
-			if (dir != UP)
-				dir = DOWN;
-			break;
-		case KEY_RIGHT:
-		case 'd':
-		case 'l':
-			if (dir != LEFT)
-				dir = RIGHT;
-			break;
-		case KEY_LEFT:
-		case 'a':
-		case 'h':
-			if (dir != RIGHT)
-				dir = LEFT;
-			break;
-		default:
-			;
-	}
-}
-
-bool
-update_snake()
-{
-	Point new_head = snake.back() + dirvec[dir];
-	// Check collision with itself
-	for (auto i : snake) {
-		if (new_head == i)
-			return true;
-	}
-	// Check collision with walls
-	if (1 > new_head.x || BOARD_COL - 2 < new_head.x || 1 > new_head.y || BOARD_LIN - 2 < new_head.y)
-		return true;
-	snake.push_back(new_head);		
-	if (char(mvwinch(board, new_head.y, new_head.x)) != FOOD_CH) {
-		Point p = snake.front();
-		mvwaddch(board, p.y, p.x, GROUND_CH | COLOR_PAIR(1));
-		snake.pop_front();
-		p = snake.back();
-		mvwaddch(board, p.y, p.x, SNAKE_CH | COLOR_PAIR(3));
-	} else {
-		mvwaddch(board, new_head.y, new_head.x, SNAKE_CH | COLOR_PAIR(1));
-		gen_food();
-	}
-	return false;
-}
-
-int
-main()
+int main()
 {
 	initscr();
 	noecho();
 	curs_set(0);
 	start_color();
-	init_pair(1, COLOR_GREEN, COLOR_BLACK);
-	init_pair(2, COLOR_RED, COLOR_BLACK);
-	init_pair(3, COLOR_YELLOW, COLOR_BLACK);
-	timeout(TIMEOUT);
 	keypad(stdscr, true);
-	// Draws title, board and snake
-	printw("SNAKE");
-	mvchgat(0, 0, BOARD_COL, A_REVERSE, 0, 0);
-	board = newwin(BOARD_LIN, BOARD_COL, 1, 0);
-	box(board, 0, 0);
-	for (int i = 1; i < BOARD_LIN - 1; ++i) {
-		for (int j = 1; j < BOARD_COL - 1; ++j) {
-			mvwaddch(board, i, j, GROUND_CH | COLOR_PAIR(1));
+
+	main_win = newwin(MAP_LIN + 2, MAP_COL + 2, 0, 0);
+	map_win = newwin(MAP_LIN, MAP_COL, 1, 1);
+
+	init_pair(1, COLOR_GREEN, COLOR_BLACK);
+	init_pair(2, COLOR_BLACK, COLOR_MAGENTA);
+	init_pair(3, COLOR_BLACK, COLOR_YELLOW);
+	init_pair(4, COLOR_WHITE, COLOR_RED);
+	init_pair(5, COLOR_BLACK, COLOR_WHITE);
+
+	box(main_win, 0, 0);
+	mvwprintw(main_win, 0, 1, "[SNAKE]");
+
+	bool running = true;
+	while (running) {
+		for (int i = 0; i < MAP_LIN ; ++i) {
+			for (int j = 0; j < MAP_COL; ++j) {
+				if (i == 0 || j == 0 || i == MAP_LIN - 1 || j == MAP_COL - 1) {
+					map[j][i] = '#';
+					mvwaddch(map_win, i, j, map[j][i] | COLOR_PAIR(5));
+					continue;
+				}
+
+				int roll = d10(rng);
+				char tile = ' ';
+				if (roll == 1)
+					tile = '\'';
+				else if (roll == 2)
+					tile = '\"';
+				else if (roll == 3)
+					tile = '`';
+				else if (roll == 4)
+					tile = '.';
+				map[j][i] = tile;
+				mvwaddch(map_win, i, j, map[j][i] | COLOR_PAIR(1));
+			}
+		}
+
+		snake = Snake();
+		snake.print();
+		gen_food();
+
+		refresh();
+		wrefresh(main_win);
+		wrefresh(map_win);
+
+		bool paused = true;
+		while(!snake.dead) {
+			if (paused) {
+				wattron(map_win, COLOR_PAIR(4));
+				mvwprintw(map_win, MAP_LIN - 1, (MAP_COL - 2) / 2 - 4, " *PAUSED* ");
+				wattroff(map_win, COLOR_PAIR(4));
+				wrefresh(map_win);
+				while (getch() != ' ') ;
+				paused = false;
+				wattron(map_win, COLOR_PAIR(5));
+				mvwprintw(map_win, MAP_LIN - 1, (MAP_COL - 2) / 2 - 4, "##########");
+				wattroff(map_win, COLOR_PAIR(5));
+				wrefresh(map_win);
+			}
+
+			switch (getch()) {
+				case KEY_UP:
+				case 'w':
+				case 'k':
+					if (snake.dir != DOWN)
+						snake.dir = UP;
+					break;
+				case KEY_DOWN:
+				case 's':
+				case 'j':
+					if (snake.dir != UP)
+						snake.dir = DOWN;
+					break;
+				case KEY_RIGHT:
+				case 'd':
+				case 'l':
+					if (snake.dir != LEFT)
+						snake.dir = RIGHT;
+					break;
+				case KEY_LEFT:
+				case 'a':
+				case 'h':
+					if (snake.dir != RIGHT)
+						snake.dir = LEFT;
+					break;
+				case ' ':
+					paused = true;
+					break;
+				default:
+					;
+			}
+
+			snake.update();
+			wrefresh(map_win);
+
 		}
 	}
-	for (auto i : snake) {
-		mvwaddch(board, i.y, i.x, SNAKE_CH | COLOR_PAIR(3));
-	}
-	gen_food();
-	refresh();
-	wrefresh(board);
-	// Game loop
-	bool over = false;
-	while(!over) {
-		update_dir();
-		over = update_snake();
-		Point h = snake.back();
-		mvprintw(BOARD_LIN+1, 0, "%d", snake.size());
-		wrefresh(board);
-	}
+
 	endwin();
 
 	return 0;
