@@ -5,26 +5,24 @@
 
 using namespace std;
 
-
 // Initial timeout
 // timeout = DELAY - DECR * SPD
 int const DELAY = 200;
 int const MAX_SPD = 15;
 int const DECR = 10;
 // Appearance
-wchar_t const SNAKE_BD = 'O';
+char const SNAKE_BD = 'O';
 char const SNAKE_HD = '@';
 char const FOOD_CH = 'f';
 char const HALVER_CH = '/';
 char const DIET_CH = '0';
 char const COKE_CH = '+';
+char const WALL_CH = '#';
 // Map size, including walls
 int const MAP_LIN = 32;
 int const MAP_COL = 62;
-char map[MAP_COL][MAP_LIN];
-// Windows
-WINDOW * map_win;
-WINDOW * main_win;
+char ground[MAP_COL][MAP_LIN];
+char scene[MAP_COL][MAP_LIN];
 
 random_device dev;
 mt19937 rng(dev());
@@ -33,7 +31,7 @@ uniform_int_distribution<std::mt19937::result_type> rand_lin(1, MAP_LIN - 2);
 uniform_int_distribution<std::mt19937::result_type> d100(1, 100);
 uniform_int_distribution<std::mt19937::result_type> d10(1, 10);
 
-void gen_food();
+void gen_food(WINDOW *win);
 
 enum Dir {
 	UP,
@@ -57,6 +55,8 @@ public:
 		return p.x == x && p.y == y;
 	}
 };
+
+list<Point> to_update;
 
 Point const dirvec[4] {
 	Point(0, -1),
@@ -89,15 +89,16 @@ public:
 			Point(14, 10),
 			Point(15, 10),
 		};
-		timeout(DELAY);
 	}
 
 	void print() {
 		for (auto i : seg) {
-			mvwaddch(map_win, i.y, i.x, SNAKE_BD | COLOR_PAIR(3));
+			scene[i.x][i.y] = SNAKE_BD;
+			to_update.push_back(i);
 		}
 		Point head = seg.back();
-		mvwaddch(map_win, head.y, head.x, SNAKE_HD | COLOR_PAIR(3));
+		scene[head.x][head.y] = SNAKE_HD;
+		to_update.push_back(head);
 	}
 
 	bool contains(Point p) {
@@ -112,10 +113,9 @@ public:
 		speed += n;
 		if (speed > MAX_SPD) speed = MAX_SPD;
 		if (speed < 0) speed = 0;
-		timeout(DELAY - DECR * speed);
 	}
 
-	void update() {
+	void update(char front) {
 		Point old_head = seg.back();
 		Point new_head = seg.back() + dirvec[dir];
 
@@ -125,32 +125,32 @@ public:
 			return;
 		}
 
-		char c = mvwinch(map_win, new_head.y, new_head.x);
-
 		// Check collision with walls
-		if (c == '#') {
+		if (front == '#') {
 			dead = true;
 			return;
 		}
 
 		seg.push_back(new_head);		
 
-		if (c == FOOD_CH) {
-			gen_food();
+		if (front == FOOD_CH) {
 			add_speed(1);
 		} else {
 			Point p = seg.front();
-			mvwaddch(map_win, p.y, p.x, map[p.x][p.y] | COLOR_PAIR(1));
+			scene[p.x][p.y] = '.';
+			to_update.push_back(p);
 			seg.pop_front();
 		}
-		mvwaddch(map_win, new_head.y, new_head.x, SNAKE_HD | COLOR_PAIR(3));
-		mvwaddch(map_win, old_head.y, old_head.x, SNAKE_BD | COLOR_PAIR(3));
+		scene[new_head.x][new_head.y] = SNAKE_HD;
+		to_update.push_back(new_head);
+		scene[old_head.x][old_head.y] = SNAKE_BD;
+		to_update.push_back(old_head);
 	}
 };
 
 Snake snake;
 
-void gen_food()
+void gen_food(WINDOW *win)
 {
 	Point new_food;
 
@@ -158,7 +158,18 @@ void gen_food()
 		new_food = Point(rand_col(rng), rand_lin(rng));
 	} while (snake.contains(new_food));
 
-	mvwaddch(map_win, new_food.y, new_food.x, FOOD_CH | COLOR_PAIR(2));
+	mvwaddch(win, new_food.y, new_food.x, FOOD_CH | COLOR_PAIR(2));
+}
+
+void update_scene(WINDOW *win)
+{
+	for (auto i : to_update) {
+		if (scene[i.x][i.y] == '.')
+			mvwaddch(win, i.y, i.x, ground[i.x][i.y] | COLOR_PAIR(1));
+		else
+			mvwaddch(win, i.y, i.x, scene[i.x][i.y] | COLOR_PAIR(3));
+	}
+	to_update.clear();
 }
 
 int main()
@@ -168,7 +179,10 @@ int main()
 	curs_set(0);
 	start_color();
 	keypad(stdscr, true);
+	timeout(DELAY);
 
+	WINDOW * map_win;
+	WINDOW * main_win;
 	main_win = newwin(MAP_LIN + 2, MAP_COL + 2, 0, 0);
 	map_win = newwin(MAP_LIN, MAP_COL, 1, 1);
 
@@ -186,8 +200,8 @@ int main()
 		for (int i = 0; i < MAP_LIN ; ++i) {
 			for (int j = 0; j < MAP_COL; ++j) {
 				if (i == 0 || j == 0 || i == MAP_LIN - 1 || j == MAP_COL - 1) {
-					map[j][i] = '#';
-					mvwaddch(map_win, i, j, map[j][i] | COLOR_PAIR(5));
+					ground[j][i] = scene[j][i]  = WALL_CH;
+					mvwaddch(map_win, i, j, ground[j][i] | COLOR_PAIR(5));
 					continue;
 				}
 
@@ -201,14 +215,15 @@ int main()
 					tile = '`';
 				else if (roll == 4)
 					tile = '.';
-				map[j][i] = tile;
-				mvwaddch(map_win, i, j, map[j][i] | COLOR_PAIR(1));
+				ground[j][i] = scene[j][i] = tile;
+				mvwaddch(map_win, i, j, ground[j][i] | COLOR_PAIR(1));
 			}
 		}
 
 		snake = Snake();
 		snake.print();
-		gen_food();
+		gen_food(map_win);
+		update_scene(map_win);
 
 		refresh();
 		wrefresh(main_win);
@@ -261,9 +276,15 @@ int main()
 					;
 			}
 
-			snake.update();
+			Point new_head = snake.seg.back() + dirvec[snake.dir];
+			char front = mvwinch(map_win, new_head.y, new_head.x);
+			snake.update(front);
+			if (front == FOOD_CH) {
+				gen_food(map_win);
+			}
+			update_scene(map_win);
+			timeout(DELAY - DECR * snake.speed);
 			wrefresh(map_win);
-
 		}
 	}
 
