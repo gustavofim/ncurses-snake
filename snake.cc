@@ -31,8 +31,6 @@ uniform_int_distribution<std::mt19937::result_type> rand_lin(1, MAP_LIN - 2);
 uniform_int_distribution<std::mt19937::result_type> d100(1, 100);
 uniform_int_distribution<std::mt19937::result_type> d10(1, 10);
 
-void gen_food(WINDOW *win);
-
 enum Dir {
 	UP,
 	DOWN,
@@ -141,6 +139,7 @@ public:
 			to_update.push_back(p);
 			seg.pop_front();
 		}
+
 		scene[new_head.x][new_head.y] = SNAKE_HD;
 		to_update.push_back(new_head);
 		scene[old_head.x][old_head.y] = SNAKE_BD;
@@ -148,9 +147,7 @@ public:
 	}
 };
 
-Snake snake;
-
-void gen_food(WINDOW *win)
+void gen_food(Snake snake)
 {
 	Point new_food;
 
@@ -158,14 +155,18 @@ void gen_food(WINDOW *win)
 		new_food = Point(rand_col(rng), rand_lin(rng));
 	} while (snake.contains(new_food));
 
-	mvwaddch(win, new_food.y, new_food.x, FOOD_CH | COLOR_PAIR(2));
+	to_update.push_back(new_food);
+	scene[new_food.x][new_food.y] = FOOD_CH;
 }
 
 void update_scene(WINDOW *win)
 {
 	for (auto i : to_update) {
-		if (scene[i.x][i.y] == '.')
+		char tile = scene[i.x][i.y];
+		if (tile == '.')
 			mvwaddch(win, i.y, i.x, ground[i.x][i.y] | COLOR_PAIR(1));
+		else if (tile == FOOD_CH)
+			mvwaddch(win, i.y, i.x, scene[i.x][i.y] | COLOR_PAIR(2));
 		else
 			mvwaddch(win, i.y, i.x, scene[i.x][i.y] | COLOR_PAIR(3));
 	}
@@ -180,6 +181,8 @@ int main()
 	start_color();
 	keypad(stdscr, true);
 	timeout(DELAY);
+
+	Snake snake;
 
 	WINDOW * map_win;
 	WINDOW * main_win;
@@ -207,14 +210,12 @@ int main()
 
 				int roll = d10(rng);
 				char tile = ' ';
-				if (roll == 1)
-					tile = '\'';
-				else if (roll == 2)
-					tile = '\"';
-				else if (roll == 3)
-					tile = '`';
-				else if (roll == 4)
-					tile = '.';
+
+				if (roll == 1) 	    tile = '\'';
+				else if (roll == 2) tile = '\"';
+				else if (roll == 3) tile = '`';
+				else if (roll == 4) tile = '.';
+
 				ground[j][i] = scene[j][i] = tile;
 				mvwaddch(map_win, i, j, ground[j][i] | COLOR_PAIR(1));
 			}
@@ -222,9 +223,9 @@ int main()
 
 		snake = Snake();
 		snake.print();
-		gen_food(map_win);
-		update_scene(map_win);
+		gen_food(snake);
 
+		update_scene(map_win);
 		refresh();
 		wrefresh(main_win);
 		wrefresh(map_win);
@@ -272,6 +273,10 @@ int main()
 				case ' ':
 					paused = true;
 					break;
+				case 'q':
+					snake.dead = true;
+					running = false;
+					break;
 				default:
 					;
 			}
@@ -279,15 +284,19 @@ int main()
 			Point new_head = snake.seg.back() + dirvec[snake.dir];
 			char front = mvwinch(map_win, new_head.y, new_head.x);
 			snake.update(front);
+
 			if (front == FOOD_CH) {
-				gen_food(map_win);
+				gen_food(snake);
 			}
+
 			update_scene(map_win);
 			timeout(DELAY - DECR * snake.speed);
 			wrefresh(map_win);
 		}
 	}
 
+	delwin(main_win);
+	delwin(map_win);
 	endwin();
 
 	return 0;
