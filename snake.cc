@@ -19,9 +19,12 @@ char const HALVER_CH = '/';
 char const DIET_CH = '0';
 char const COKE_CH = '+';
 char const WALL_CH = '#';
-// Map size, including walls
+// Window sizes
 int const MAP_LIN = 32;
 int const MAP_COL = 62;
+int const MAIN_LIN = MAP_LIN + 4 + 4;
+int const MAIN_COL = MAP_COL + 4 + 24;
+// "Tiles"
 char ground[MAP_COL][MAP_LIN];
 char scene[MAP_COL][MAP_LIN];
 
@@ -202,15 +205,40 @@ int main(int argc, char **argv)
 	init_pair(5, COLOR_BLACK, COLOR_WHITE);
 
 	Snake snake;
-	WINDOW *main_win = newwin(MAP_LIN + 2, MAP_COL + 2, 0, 0);;
-	WINDOW *map_win = newwin(MAP_LIN, MAP_COL, 1, 1);
+	WINDOW *main_win = newwin(MAIN_LIN, MAIN_COL, 0, 0);;
+	WINDOW *map_win = newwin(MAP_LIN, MAP_COL, 2, 2);
+	WINDOW *help_win = newwin(4, MAP_COL, MAP_LIN + 3, 2);
+
 	keypad(map_win, true);
 
 	box(main_win, 0, 0);
-	mvwprintw(main_win, 0, 1, "[SNAKE]");
+    wattron(main_win, A_BOLD);
+	mvwprintw(main_win, 0, MAIN_COL / 2 - 3, " Snake ");
+    wattroff(main_win, A_BOLD);
+
+	box(help_win, 0, 0);
+    wattron(help_win, A_BOLD);
+    mvwaddstr(help_win, 0, MAP_COL / 2 - 3, " Help ");
+    wattroff(help_win, A_BOLD);
+    mvwaddstr(help_win, 1, 2, "Move with ");
+    wattron(help_win, COLOR_PAIR(1) | A_BOLD);
+    waddstr(help_win, "wasd  hjkl    arrow keys");
+    wattroff(help_win, COLOR_PAIR(1) | A_BOLD);
+    mvwaddch(help_win, 1, 16, ',');
+    mvwaddstr(help_win, 1, 23, "or");
+    mvwaddstr(help_win, 1, 36, ". Press     to pause, ");
+    wattron(help_win, COLOR_PAIR(1) | A_BOLD);
+    waddch(help_win, 'r');
+    mvwaddstr(help_win, 1, 44, "Spc");
+    wattroff(help_win, COLOR_PAIR(1) | A_BOLD);
+    mvwaddstr(help_win, 2, 2, "to restart or   to quit.");
+    wattron(help_win, COLOR_PAIR(1) | A_BOLD);
+    mvwaddch(help_win, 2, 16, 'Q');
+    wattroff(help_win, COLOR_PAIR(1) | A_BOLD);
 
 	refresh();
 	wrefresh(main_win);
+	wrefresh(help_win);
 
 	bool running = true;
 	while (running) {
@@ -247,9 +275,9 @@ int main(int argc, char **argv)
 		bool paused = true;
 		while(!snake.dead) {
 			if (paused) {
-				wattron(map_win, COLOR_PAIR(4));
+				wattron(map_win, COLOR_PAIR(4) | A_BOLD);
 				mvwprintw(map_win, MAP_LIN - 1, (MAP_COL - 2) / 2 - 4, " *PAUSED* ");
-				wattroff(map_win, COLOR_PAIR(4));
+				wattroff(map_win, COLOR_PAIR(4) | A_BOLD);
 				wrefresh(map_win);
 				while (getch() != ' ') ;
 				paused = false;
@@ -287,7 +315,7 @@ int main(int argc, char **argv)
 				case ' ':
 					paused = true;
 					break;
-				case 'q':
+				case 'Q':
 					snake.dead = true;
 					running = false;
 					break;
@@ -296,7 +324,8 @@ int main(int argc, char **argv)
 			}
 
 			Point new_head = snake.seg.back() + dirvec[snake.dir];
-			char front = char(mvwinch(map_win, new_head.y, new_head.x));
+			//char front = char(mvwinch(map_win, new_head.y, new_head.x));
+            char front = scene[new_head.x][new_head.y];
 			snake.update(front);
 
 			if (front == FOOD_CH) {
