@@ -1,6 +1,7 @@
 #include <ncurses.h>
 #include <iostream>
 #include <random>
+#include <string>
 #include <list>
 
 using namespace std;
@@ -173,21 +174,26 @@ void update_scene(WINDOW *win)
 	to_update.clear();
 }
 
-int main()
+int main(int argc, char **argv)
 {
+    bool color = false;
+    if (argc > 1)
+        if (string(argv[1]) == "color")
+            color = true;
+
 	initscr();
 	noecho();
 	curs_set(0);
 	start_color();
-	keypad(stdscr, true);
-	timeout(DELAY);
 
-	Snake snake;
-
-	WINDOW * map_win;
-	WINDOW * main_win;
-	main_win = newwin(MAP_LIN + 2, MAP_COL + 2, 0, 0);
-	map_win = newwin(MAP_LIN, MAP_COL, 1, 1);
+    if (color) {
+        init_color(COLOR_BLACK, 156, 156, 156);
+        init_color(COLOR_GREEN, 721, 733, 149);
+        init_color(COLOR_MAGENTA, 694, 384, 525);
+        init_color(COLOR_YELLOW, 980, 741, 184);
+        init_color(COLOR_WHITE, 921, 858, 698);
+        init_color(COLOR_RED, 984, 286, 203);
+    }
 
 	init_pair(1, COLOR_GREEN, COLOR_BLACK);
 	init_pair(2, COLOR_BLACK, COLOR_MAGENTA);
@@ -195,8 +201,16 @@ int main()
 	init_pair(4, COLOR_WHITE, COLOR_RED);
 	init_pair(5, COLOR_BLACK, COLOR_WHITE);
 
+	Snake snake;
+	WINDOW *main_win = newwin(MAP_LIN + 2, MAP_COL + 2, 0, 0);;
+	WINDOW *map_win = newwin(MAP_LIN, MAP_COL, 1, 1);
+	keypad(map_win, true);
+
 	box(main_win, 0, 0);
 	mvwprintw(main_win, 0, 1, "[SNAKE]");
+
+	refresh();
+	wrefresh(main_win);
 
 	bool running = true;
 	while (running) {
@@ -225,9 +239,9 @@ int main()
 		snake.print();
 		gen_food(snake);
 
+		wtimeout(map_win, DELAY);
 		update_scene(map_win);
-		refresh();
-		wrefresh(main_win);
+
 		wrefresh(map_win);
 
 		bool paused = true;
@@ -245,7 +259,7 @@ int main()
 				wrefresh(map_win);
 			}
 
-			switch (getch()) {
+			switch (wgetch(map_win)) {
 				case KEY_UP:
 				case 'w':
 				case 'k':
@@ -282,7 +296,7 @@ int main()
 			}
 
 			Point new_head = snake.seg.back() + dirvec[snake.dir];
-			char front = mvwinch(map_win, new_head.y, new_head.x);
+			char front = char(mvwinch(map_win, new_head.y, new_head.x));
 			snake.update(front);
 
 			if (front == FOOD_CH) {
