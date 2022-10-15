@@ -1,6 +1,7 @@
 #include <ncurses.h>
 #include <iostream>
 #include <random>
+#include <cstring>
 #include <string>
 #include <list>
 
@@ -19,15 +20,18 @@ char const HALVER_CH = '/';
 char const DIET_CH = '0';
 char const COKE_CH = '+';
 char const WALL_CH = '#';
+char const GRASS_CH = '.';
 // Window sizes
 int const MAP_LIN = 32;
 int const MAP_COL = 62;
-int const MAIN_LIN = MAP_LIN + 4 + 4;
-int const MAIN_COL = MAP_COL + 4 + 24;
+int const HELP_LIN = 4;
+int const HELP_COL = MAP_COL;
+int const MAIN_LIN = MAP_LIN + HELP_LIN + 4;
+int const MAIN_COL = MAP_COL + 4;
 // "Tiles"
-char ground[MAP_COL][MAP_LIN];
-char scene[MAP_COL][MAP_LIN];
-
+char ground[MAP_COL][MAP_LIN]; // Randomly generated grass
+char scene[MAP_COL][MAP_LIN];  // What should be on the screen
+// Randomness
 random_device dev;
 mt19937 rng(dev());
 uniform_int_distribution<std::mt19937::result_type> rand_col(1, MAP_COL - 2);
@@ -53,9 +57,9 @@ public:
 		return Point(p.x + x, p.y + y);
 	}
 
-	bool operator==(Point p) {
-		return p.x == x && p.y == y;
-	}
+	//bool operator==(Point p) {
+	//	return p.x == x && p.y == y;
+	//}
 };
 
 list<Point> to_update;
@@ -103,35 +107,23 @@ public:
 		to_update.push_back(head);
 	}
 
-	bool contains(Point p) {
-		for (auto i : seg) {
-			if (p == i)
-				return true;
-		}
-		return false;
-	}
-
 	void add_speed(int n) {
 		speed += n;
 		if (speed > MAX_SPD) speed = MAX_SPD;
 		if (speed < 0) speed = 0;
 	}
 
-	void update(char front) {
+	void update() {
+        Point new_head = seg.back() + dirvec[dir];
+        char front = scene[new_head.x][new_head.y];
+
+		// Check collision
+		if (front == WALL_CH || front == SNAKE_BD) {
+			dead = true;
+			return;
+		}
+
 		Point old_head = seg.back();
-		Point new_head = seg.back() + dirvec[dir];
-
-		// Check collision with itself
-		if (contains(new_head)) {
-			dead = true;
-			return;
-		}
-
-		// Check collision with walls
-		if (front == '#') {
-			dead = true;
-			return;
-		}
 
 		seg.push_back(new_head);		
 
@@ -139,7 +131,7 @@ public:
 			add_speed(1);
 		} else {
 			Point p = seg.front();
-			scene[p.x][p.y] = '.';
+			scene[p.x][p.y] = GRASS_CH;
 			to_update.push_back(p);
 			seg.pop_front();
 		}
@@ -151,23 +143,25 @@ public:
 	}
 };
 
-void gen_food(Snake snake)
+Point gen_food(Snake snake)
 {
 	Point new_food;
 
 	do {
 		new_food = Point(rand_col(rng), rand_lin(rng));
-	} while (snake.contains(new_food));
+	} while (scene[new_food.x][new_food.y] != GRASS_CH);
 
 	to_update.push_back(new_food);
 	scene[new_food.x][new_food.y] = FOOD_CH;
+    
+    return new_food;
 }
 
 void update_scene(WINDOW *win)
 {
 	for (auto i : to_update) {
 		char tile = scene[i.x][i.y];
-		if (tile == '.')
+		if (tile == GRASS_CH)
 			mvwaddch(win, i.y, i.x, ground[i.x][i.y] | COLOR_PAIR(1));
 		else if (tile == FOOD_CH)
 			mvwaddch(win, i.y, i.x, scene[i.x][i.y] | COLOR_PAIR(2));
@@ -175,6 +169,22 @@ void update_scene(WINDOW *win)
 			mvwaddch(win, i.y, i.x, scene[i.x][i.y] | COLOR_PAIR(3));
 	}
 	to_update.clear();
+}
+ 
+void print_on_wall(WINDOW *map, int color, const char *text)
+{
+    if (text == NULL) {
+        wattron(map, COLOR_PAIR(5));
+        mvwhline(map, MAP_LIN - 1, 0, ACS_HLINE, MAP_COL);
+        wattroff(map, COLOR_PAIR(5));
+        wrefresh(map);
+        return;
+    }
+
+    wattron(map, COLOR_PAIR(color) | A_BOLD);
+    mvwprintw(map, MAP_LIN - 1, (MAP_COL - 2) / 2 - (strlen(text) / 2), text);
+    wattroff(map, COLOR_PAIR(color) | A_BOLD);
+    wrefresh(map);
 }
 
 int main(int argc, char **argv)
@@ -203,11 +213,11 @@ int main(int argc, char **argv)
 	init_pair(3, COLOR_BLACK, COLOR_YELLOW);
 	init_pair(4, COLOR_WHITE, COLOR_RED);
 	init_pair(5, COLOR_BLACK, COLOR_WHITE);
+	init_pair(6, COLOR_WHITE, COLOR_BLUE);
 
-	Snake snake;
 	WINDOW *main_win = newwin(MAIN_LIN, MAIN_COL, 0, 0);;
 	WINDOW *map_win = newwin(MAP_LIN, MAP_COL, 2, 2);
-	WINDOW *help_win = newwin(4, MAP_COL, MAP_LIN + 3, 2);
+	WINDOW *help_win = newwin(HELP_LIN, HELP_COL, MAP_LIN + 3, 2);
 
 	keypad(map_win, true);
 
@@ -240,13 +250,17 @@ int main(int argc, char **argv)
 	wrefresh(main_win);
 	wrefresh(help_win);
 
+	Snake snake;
+    Point food_pos;
 	bool running = true;
 	while (running) {
+        wattron(map_win, A_REVERSE);
+        box(map_win, 0, 0);
+        wattroff(map_win, A_REVERSE);
 		for (int i = 0; i < MAP_LIN ; ++i) {
 			for (int j = 0; j < MAP_COL; ++j) {
 				if (i == 0 || j == 0 || i == MAP_LIN - 1 || j == MAP_COL - 1) {
 					ground[j][i] = scene[j][i]  = WALL_CH;
-					mvwaddch(map_win, i, j, ground[j][i] | COLOR_PAIR(5));
 					continue;
 				}
 
@@ -258,62 +272,58 @@ int main(int argc, char **argv)
 				else if (roll == 3) tile = '`';
 				else if (roll == 4) tile = '.';
 
-				ground[j][i] = scene[j][i] = tile;
+				ground[j][i] = tile;
+                scene[j][i] = GRASS_CH;
 				mvwaddch(map_win, i, j, ground[j][i] | COLOR_PAIR(1));
 			}
 		}
 
 		snake = Snake();
 		snake.print();
-		gen_food(snake);
+		food_pos = gen_food(snake);
 
 		wtimeout(map_win, DELAY);
 		update_scene(map_win);
 
 		wrefresh(map_win);
 
-		bool paused = true;
-		while(!snake.dead) {
-			if (paused) {
-				wattron(map_win, COLOR_PAIR(4) | A_BOLD);
-				mvwprintw(map_win, MAP_LIN - 1, (MAP_COL - 2) / 2 - 4, " *PAUSED* ");
-				wattroff(map_win, COLOR_PAIR(4) | A_BOLD);
-				wrefresh(map_win);
-				while (getch() != ' ') ;
-				paused = false;
-				wattron(map_win, COLOR_PAIR(5));
-				mvwprintw(map_win, MAP_LIN - 1, (MAP_COL - 2) / 2 - 4, "##########");
-				wattroff(map_win, COLOR_PAIR(5));
-				wrefresh(map_win);
-			}
+		bool paused = false;
 
+        print_on_wall(map_win, 6, " *PRESS ANY KEY TO START* ");
+        getch();
+        print_on_wall(map_win, 6, NULL);
+
+		while(!snake.dead) {
 			switch (wgetch(map_win)) {
 				case KEY_UP:
 				case 'w':
 				case 'k':
-					if (snake.dir != DOWN)
+					if (snake.dir != DOWN && !paused)
 						snake.dir = UP;
 					break;
 				case KEY_DOWN:
 				case 's':
 				case 'j':
-					if (snake.dir != UP)
+					if (snake.dir != UP && !paused)
 						snake.dir = DOWN;
 					break;
 				case KEY_RIGHT:
 				case 'd':
 				case 'l':
-					if (snake.dir != LEFT)
+					if (snake.dir != LEFT && !paused)
 						snake.dir = RIGHT;
 					break;
 				case KEY_LEFT:
 				case 'a':
 				case 'h':
-					if (snake.dir != RIGHT)
+					if (snake.dir != RIGHT && !paused)
 						snake.dir = LEFT;
 					break;
 				case ' ':
-					paused = true;
+					paused = !paused;
+                    if (paused) print_on_wall(map_win, 4, " *PAUSED* ");
+                    else print_on_wall(map_win, 4, NULL);
+                    wrefresh(map_win);
 					break;
 				case 'Q':
 					snake.dead = true;
@@ -323,17 +333,16 @@ int main(int argc, char **argv)
 					;
 			}
 
-			Point new_head = snake.seg.back() + dirvec[snake.dir];
-			//char front = char(mvwinch(map_win, new_head.y, new_head.x));
-            char front = scene[new_head.x][new_head.y];
-			snake.update(front);
+            if (paused) continue;
 
-			if (front == FOOD_CH) {
-				gen_food(snake);
+			snake.update();
+
+			if (scene[food_pos.x][food_pos.y] != FOOD_CH) {
+				food_pos = gen_food(snake);
 			}
 
 			update_scene(map_win);
-			timeout(DELAY - DECR * snake.speed);
+			wtimeout(map_win, DELAY - DECR * snake.speed);
 			wrefresh(map_win);
 		}
 	}
