@@ -57,12 +57,10 @@ public:
 		return Point(p.x + x, p.y + y);
 	}
 
-	//bool operator==(Point p) {
-	//	return p.x == x && p.y == y;
-	//}
+	bool operator==(Point p) {
+		return p.x == x && p.y == y;
+	}
 };
-
-list<Point> to_update;
 
 Point const dirvec[4] {
 	Point(0, -1),
@@ -97,14 +95,8 @@ public:
 		};
 	}
 
-	void print() {
-		for (auto i : seg) {
-			scene[i.x][i.y] = SNAKE_BD;
-			to_update.push_back(i);
-		}
-		Point head = seg.back();
-		scene[head.x][head.y] = SNAKE_HD;
-		to_update.push_back(head);
+	list<Point> get_points() {
+        return seg;
 	}
 
 	void add_speed(int n) {
@@ -113,34 +105,31 @@ public:
 		if (speed < 0) speed = 0;
 	}
 
-	void update() {
+	Point move() {
         Point new_head = seg.back() + dirvec[dir];
-        char front = scene[new_head.x][new_head.y];
+        //char front = scene[new_head.x][new_head.y];
 
-		// Check collision
-		if (front == WALL_CH || front == SNAKE_BD) {
-			dead = true;
-			return;
-		}
-
-		Point old_head = seg.back();
+		//// Check collision
+		//if (front == WALL_CH || front == SNAKE_BD) {
+		//	dead = true;
+		//	return new_head;
+		//}
 
 		seg.push_back(new_head);		
 
-		if (front == FOOD_CH) {
+        return new_head;
+	}
+
+    void eat(char food) {
+		if (food == FOOD_CH) {
 			add_speed(1);
+		} else if (food == WALL_CH || food == SNAKE_BD) {
+			dead = true;
 		} else {
 			Point p = seg.front();
-			scene[p.x][p.y] = GRASS_CH;
-			to_update.push_back(p);
 			seg.pop_front();
 		}
-
-		scene[new_head.x][new_head.y] = SNAKE_HD;
-		to_update.push_back(new_head);
-		scene[old_head.x][old_head.y] = SNAKE_BD;
-		to_update.push_back(old_head);
-	}
+    }
 };
 
 Point gen_food(Snake snake)
@@ -151,24 +140,9 @@ Point gen_food(Snake snake)
 		new_food = Point(rand_col(rng), rand_lin(rng));
 	} while (scene[new_food.x][new_food.y] != GRASS_CH);
 
-	to_update.push_back(new_food);
 	scene[new_food.x][new_food.y] = FOOD_CH;
     
     return new_food;
-}
-
-void update_scene(WINDOW *win)
-{
-	for (auto i : to_update) {
-		char tile = scene[i.x][i.y];
-		if (tile == GRASS_CH)
-			mvwaddch(win, i.y, i.x, ground[i.x][i.y] | COLOR_PAIR(1));
-		else if (tile == FOOD_CH)
-			mvwaddch(win, i.y, i.x, scene[i.x][i.y] | COLOR_PAIR(2));
-		else
-			mvwaddch(win, i.y, i.x, scene[i.x][i.y] | COLOR_PAIR(3));
-	}
-	to_update.clear();
 }
  
 void print_on_wall(WINDOW *map, int color, const char *text)
@@ -250,8 +224,12 @@ int main(int argc, char **argv)
 	wrefresh(main_win);
 	wrefresh(help_win);
 
+    char head[4] = { '^', 'v', '>', '<' };
 	Snake snake;
+    list<Point> new_snake;
+    list<Point> old_snake;
     Point food_pos;
+    Point head_pos;
 	bool running = true;
 	while (running) {
         wattron(map_win, A_REVERSE);
@@ -279,11 +257,17 @@ int main(int argc, char **argv)
 		}
 
 		snake = Snake();
-		snake.print();
+		new_snake = old_snake = snake.get_points();
+        head_pos = new_snake.back();
 		food_pos = gen_food(snake);
 
+        for (auto i : new_snake) {
+            mvwaddch(map_win, i.y, i.x, SNAKE_BD | COLOR_PAIR(3));
+        }
+        mvwaddch(map_win, head_pos.y, head_pos.x, head[snake.dir] | COLOR_PAIR(3));
+        mvwaddch(map_win, food_pos.y, food_pos.x, FOOD_CH | COLOR_PAIR(2));
+
 		wtimeout(map_win, DELAY);
-		update_scene(map_win);
 
 		wrefresh(map_win);
 
@@ -294,6 +278,19 @@ int main(int argc, char **argv)
         print_on_wall(map_win, 6, NULL);
 
 		while(!snake.dead) {
+            for (auto i : old_snake) {
+                mvwaddch(map_win, i.y, i.x, ground[i.x][i.y] | COLOR_PAIR(1));
+                scene[i.x][i.y] = GRASS_CH;
+            }
+
+            for (auto i : new_snake) {
+                mvwaddch(map_win, i.y, i.x, SNAKE_BD | COLOR_PAIR(3));
+                scene[i.x][i.y] = SNAKE_BD;
+            }
+            mvwaddch(map_win, head_pos.y, head_pos.x, head[snake.dir] | COLOR_PAIR(3));
+
+            old_snake = new_snake;
+
 			switch (wgetch(map_win)) {
 				case KEY_UP:
 				case 'w':
@@ -335,13 +332,16 @@ int main(int argc, char **argv)
 
             if (paused) continue;
 
-			snake.update();
+			head_pos = snake.move();
+            snake.eat(scene[head_pos.x][head_pos.y]);
 
-			if (scene[food_pos.x][food_pos.y] != FOOD_CH) {
+			if (head_pos == food_pos) {
 				food_pos = gen_food(snake);
+                mvwaddch(map_win, food_pos.y, food_pos.x, FOOD_CH | COLOR_PAIR(2));
 			}
 
-			update_scene(map_win);
+            new_snake = snake.get_points();
+
 			wtimeout(map_win, DELAY - DECR * snake.speed);
 			wrefresh(map_win);
 		}
