@@ -6,5 +6,5 @@ A snake game for the terminal.
 
 ## Compiling
 A simple `make` should do it on linux and macos (requires ncurses, of course),
-precompiled windows version available on releases (`run.bat` should be used instead
+a windows version is available on releases (`run.bat` should be used instead
 of `snake.exe` when not running in a terminal).
