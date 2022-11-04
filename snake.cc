@@ -14,7 +14,6 @@ int const MAX_SPD = 15;
 int const DECR = 10;
 // Appearance
 char const SNAKE_BD = 'O';
-char const SNAKE_HD = '@';
 char const FOOD_CH = 'f';
 char const HALVER_CH = '/';
 char const LARD_CH = '-';
@@ -278,20 +277,15 @@ int main(int argc, char **argv)
     wattron(help_win, A_BOLD);
     mvwaddstr(help_win, 0, MAP_COL / 2 - 3, " Help ");
     wattroff(help_win, A_BOLD);
-    mvwaddstr(help_win, 1, 2, "Move with ");
+    mvwaddstr(help_win, 1, 2, "Move with wasd, hjkl or arrow keys. Press spc to pause, r");
+    mvwaddstr(help_win, 2, 2, "to restart or Q to quit.");
     wattron(help_win, COLOR_PAIR(1) | A_BOLD);
-    waddstr(help_win, "wasd  hjkl    arrow keys");
-    wattroff(help_win, COLOR_PAIR(1) | A_BOLD);
-    mvwaddch(help_win, 1, 16, ',');
-    mvwaddstr(help_win, 1, 23, "or");
-    mvwaddstr(help_win, 1, 36, ". Press     to pause, ");
-    wattron(help_win, COLOR_PAIR(1) | A_BOLD);
-    waddch(help_win, 'r');
-    mvwaddstr(help_win, 1, 44, "Spc");
-    wattroff(help_win, COLOR_PAIR(1) | A_BOLD);
-    mvwaddstr(help_win, 2, 2, "to restart or   to quit.");
-    wattron(help_win, COLOR_PAIR(1) | A_BOLD);
-    mvwaddch(help_win, 2, 16, 'Q');
+    mvwaddstr(help_win, 1, 12, "wasd");
+    mvwaddstr(help_win, 1, 18, "hjkl");
+    mvwaddstr(help_win, 1, 26, "arrow keys");
+    mvwaddstr(help_win, 1, 44, "spc");
+    mvwaddstr(help_win, 1, 58, "R");
+    mvwaddstr(help_win, 2, 16, "Q");
     wattroff(help_win, COLOR_PAIR(1) | A_BOLD);
 
 	box(stats_win, 0, 0);
@@ -448,6 +442,9 @@ int main(int argc, char **argv)
 					snake.dead = true;
 					running = false;
 					break;
+				case 'R':
+					snake.dead = true;
+                    break;
 				default:
 					;
 			}
